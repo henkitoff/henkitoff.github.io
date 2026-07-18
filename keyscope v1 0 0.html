@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0b0d10">
+<title>Keyscope v1.0.0 – Live Tonart-Erkennung</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14171c; --line:#232830;
+    --text:#e8ecf0; --muted:#69737f;
+    --key-h:210; /* wird live gesetzt */
+    --accent:hsl(var(--key-h) 85% 60%);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;align-items:center;
+    padding:max(12px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom));
+    overscroll-behavior:none;user-select:none;-webkit-user-select:none;
+  }
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+
+  header{width:100%;max-width:440px;display:flex;align-items:center;justify-content:space-between;padding:2px 2px 10px}
+  .brand{font-weight:700;letter-spacing:.14em;font-size:13px}
+  .brand span{color:var(--muted);font-weight:400;letter-spacing:.05em;font-size:11px;margin-left:6px}
+  .status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#3a414b;transition:background .3s}
+  .dot.live{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+
+  .wheelwrap{position:relative;width:min(88vw,400px);aspect-ratio:1;margin:4px 0 8px}
+  svg{width:100%;height:100%;display:block}
+  .seg{fill:#171b21;stroke:var(--bg);stroke-width:2;transition:fill .5s,filter .5s}
+  .seg.hit{filter:drop-shadow(0 0 10px var(--accent))}
+  .seg.near{transition:fill .5s}
+  .seglabel{fill:#5a6470;font-size:13px;font-weight:600;pointer-events:none;transition:fill .5s}
+  .seglabel.hit{fill:#0b0d10;font-weight:800}
+  .seglabel.near{fill:var(--text)}
+
+  .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none}
+  .code{font-size:64px;font-weight:800;letter-spacing:-.02em;line-height:1;color:var(--accent);transition:color .5s;text-shadow:0 0 24px color-mix(in srgb,var(--accent) 40%,transparent)}
+  .keyname{font-size:17px;color:var(--text);margin-top:6px;font-weight:500}
+  .conf{font-size:11px;color:var(--muted);margin-top:4px;letter-spacing:.08em}
+
+  .panel{width:100%;max-width:440px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+  .panel h2{font-size:10px;letter-spacing:.16em;color:var(--muted);font-weight:600;margin-bottom:8px}
+
+  .chroma{display:flex;gap:3px;height:44px;align-items:flex-end}
+  .chroma .bar{flex:1;background:#242a33;border-radius:3px 3px 0 0;min-height:2px;transition:height .15s}
+  .chroma .bar.top{background:var(--accent)}
+  .chromalabels{display:flex;gap:3px;margin-top:4px}
+  .chromalabels div{flex:1;text-align:center;font-size:9px;color:var(--muted)}
+
+  .compat{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{padding:7px 12px;border-radius:999px;border:1px solid var(--line);font-size:13px;font-weight:600;color:var(--text)}
+  .chip b{color:var(--accent)}
+  .chip small{color:var(--muted);font-weight:400;margin-left:5px;font-size:11px}
+
+  .level{height:4px;border-radius:2px;background:#242a33;overflow:hidden;margin-top:10px}
+  .level i{display:block;height:100%;width:0;background:var(--accent);transition:width .12s}
+  .hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
+  .hint.warn{color:#e0a24a}
+
+  button#go{
+    width:100%;max-width:440px;padding:16px;border:none;border-radius:14px;
+    font-size:16px;font-weight:700;letter-spacing:.04em;cursor:pointer;
+    background:var(--accent);color:#0b0d10;transition:background .3s;
+  }
+  button#go.running{background:#242a33;color:var(--text);border:1px solid var(--line)}
+  @media (prefers-reduced-motion:reduce){*{transition:none !important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">KEYSCOPE<span>v1.0.0</span></div>
+  <div class="status"><div class="dot" id="dot"></div><span id="statustext">Bereit</span></div>
+</header>
+
+<div class="wheelwrap">
+  <svg id="wheel" viewBox="0 0 400 400"></svg>
+  <div class="center">
+    <div class="code mono" id="code">–</div>
+    <div class="keyname" id="keyname">Warte auf Musik</div>
+    <div class="conf" id="conf"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>PASST ZUM MIX</h2>
+  <div class="compat" id="compat"><span style="color:var(--muted);font-size:12px">Noch keine Tonart erkannt</span></div>
+</div>
+
+<div class="panel">
+  <h2>CHROMAGRAM · 12 TONKLASSEN</h2>
+  <div class="chroma" id="chroma"></div>
+  <div class="chromalabels" id="chromalabels"></div>
+  <div class="level"><i id="lvl"></i></div>
+  <div class="hint" id="hint">Handy in Richtung Lautsprecher halten. Die Erkennung stabilisiert sich nach ca. 5–10 Sekunden Musik.</div>
+</div>
+
+<button id="go">Erkennung starten</button>
+
+<script>
+"use strict";
+
+/* ── Musiktheorie ─────────────────────────────── */
+const NOTES = ["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];
+const MAJ_NUM = {0:8,1:3,2:10,3:5,4:12,5:7,6:2,7:9,8:4,9:11,10:6,11:1};
+const MIN_NUM = {0:5,1:12,2:7,3:2,4:9,5:4,6:11,7:6,8:1,9:8,10:3,11:10};
+// Krumhansl-Schmuckler Profile
+const P_MAJ = [6.35,2.23,3.48,2.33,4.38,4.09,2.52,5.19,2.39,3.66,2.29,2.88];
+const P_MIN = [6.33,3.52,2.54,3.53,3.98,4.75,2.68,3.98,2.69,3.34,3.17,3.79];
+
+function camelot(pc, minor){ return (minor?MIN_NUM:MAJ_NUM)[pc] + (minor?"A":"B"); }
+function keyName(pc, minor){ return NOTES[pc] + (minor?"-Moll":"-Dur"); }
+function hueFor(num){ return ((num % 12) * 30 + 200) % 360; }
+
+function pearson(a,b){
+  let n=12,sa=0,sb=0,saa=0,sbb=0,sab=0;
+  for(let i=0;i<n;i++){sa+=a[i];sb+=b[i];saa+=a[i]*a[i];sbb+=b[i]*b[i];sab+=a[i]*b[i];}
+  const num=n*sab-sa*sb, den=Math.sqrt((n*saa-sa*sa)*(n*sbb-sb*sb));
+  return den===0?0:num/den;
+}
+
+function detectKey(chroma){
+  let results=[];
+  for(let root=0;root<12;root++){
+    const rot=[]; for(let i=0;i<12;i++) rot.push(chroma[(i+root)%12]);
+    results.push({pc:root,minor:false,r:pearson(rot,P_MAJ)});
+    results.push({pc:root,minor:true, r:pearson(rot,P_MIN)});
+  }
+  results.sort((a,b)=>b.r-a.r);
+  return {best:results[0], second:results[1], gap:results[0].r-results[1].r};
+}
+
+/* ── Camelot Wheel (SVG) ──────────────────────── */
+const svg=document.getElementById("wheel");
+const NS="http://www.w3.org/2000/svg";
+const segs={}, labels={};
+function polar(cx,cy,r,deg){const a=(deg-90)*Math.PI/180;return[cx+r*Math.cos(a),cy+r*Math.sin(a)];}
+function segPath(cx,cy,r1,r2,a1,a2){
+  const [x1,y1]=polar(cx,cy,r2,a1),[x2,y2]=polar(cx,cy,r2,a2),
+        [x3,y3]=polar(cx,cy,r1,a2),[x4,y4]=polar(cx,cy,r1,a1);
+  return `M${x1},${y1} A${r2},${r2} 0 0 1 ${x2},${y2} L${x3},${y3} A${r1},${r1} 0 0 0 ${x4},${y4} Z`;
+}
+function buildWheel(){
+  const cx=200,cy=200;
+  const rings=[{letter:"B",r1:150,r2:195},{letter:"A",r1:104,r2:148}];
+  for(const ring of rings){
+    for(let n=1;n<=12;n++){
+      const centerA=(n%12)*30;              // 12 oben, im Uhrzeigersinn
+      const a1=centerA-14.4,a2=centerA+14.4;
+      const p=document.createElementNS(NS,"path");
+      p.setAttribute("d",segPath(cx,cy,ring.r1,ring.r2,a1,a2));
+      p.setAttribute("class","seg");
+      svg.appendChild(p);
+      const rm=(ring.r1+ring.r2)/2,[tx,ty]=polar(cx,cy,rm,centerA);
+      const t=document.createElementNS(NS,"text");
+      t.setAttribute("x",tx);t.setAttribute("y",ty+4.5);
+      t.setAttribute("text-anchor","middle");
+      t.setAttribute("class","seglabel mono");
+      t.textContent=n+ring.letter;
+      svg.appendChild(t);
+      segs[n+ring.letter]=p; labels[n+ring.letter]=t;
+    }
+  }
+}
+buildWheel();
+
+function neighbors(code){
+  const num=parseInt(code), let_=code.slice(-1);
+  const up=(num%12)+1, dn=((num+10)%12)+1;
+  return [
+    {c:num+(let_==="A"?"B":"A"), why:let_==="A"?"Dur-Wechsel":"Moll-Wechsel"},
+    {c:up+let_, why:"+1 energetischer"},
+    {c:dn+let_, why:"−1 ruhiger"}
+  ];
+}
+
+function paintWheel(code){
+  const num=code?parseInt(code):null;
+  const hue=num?hueFor(num):210;
+  document.documentElement.style.setProperty("--key-h",hue);
+  const near=code?neighbors(code).map(n=>n.c):[];
+  for(const k in segs){
+    const s=segs[k],l=labels[k];
+    s.classList.remove("hit","near"); l.classList.remove("hit","near");
+    if(k===code){
+      s.style.fill=`hsl(${hue} 85% 60%)`; s.classList.add("hit"); l.classList.add("hit");
+    }else if(near.includes(k)){
+      s.style.fill=`hsl(${hueFor(parseInt(k))} 45% 24%)`; s.classList.add("near"); l.classList.add("near");
+    }else{
+      s.style.fill="";
+    }
+  }
+}
+
+/* ── UI-Elemente ──────────────────────────────── */
+const el={
+  go:document.getElementById("go"), dot:document.getElementById("dot"),
+  status:document.getElementById("statustext"), code:document.getElementById("code"),
+  keyname:document.getElementById("keyname"), conf:document.getElementById("conf"),
+  compat:document.getElementById("compat"), chroma:document.getElementById("chroma"),
+  lvl:document.getElementById("lvl"), hint:document.getElementById("hint")
+};
+const chromaBars=[];
+const CL=document.getElementById("chromalabels");
+for(let i=0;i<12;i++){
+  const b=document.createElement("div");b.className="bar";
+  el.chroma.appendChild(b);chromaBars.push(b);
+  const l=document.createElement("div");l.textContent=NOTES[i];CL.appendChild(l);
+}
+
+/* ── Audio-Engine ─────────────────────────────── */
+let ctx=null, analyser=null, stream=null, running=false;
+let freqBuf=null, chromaAcc=new Float32Array(12);
+let displayCode=null, candidate=null, candidateCount=0, wakeLock=null;
+const FMIN=60, FMAX=2200, DECAY=0.94, SWITCH_AFTER=16; // ~1.6 s bei 10 Hz
+
+async function start(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:{
+      echoCancellation:false,noiseSuppression:false,autoGainControl:false
+    }});
+  }catch(e){
+    el.hint.textContent="Mikrofonzugriff verweigert oder nicht verfügbar. Datei lokal im Browser (Safari/Chrome) öffnen und Zugriff erlauben – in eingebetteten Vorschauen ist das Mikrofon oft blockiert.";
+    el.hint.classList.add("warn");
+    return;
+  }
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  await ctx.resume();
+  const src=ctx.createMediaStreamSource(stream);
+  analyser=ctx.createAnalyser();
+  analyser.fftSize=8192;
+  analyser.smoothingTimeConstant=0.5;
+  src.connect(analyser);
+  freqBuf=new Float32Array(analyser.frequencyBinCount);
+  chromaAcc.fill(0); displayCode=null; candidate=null; candidateCount=0;
+
+  running=true;
+  el.go.textContent="Erkennung stoppen"; el.go.classList.add("running");
+  el.dot.classList.add("live"); el.status.textContent="Live";
+  el.hint.textContent="Handy in Richtung Lautsprecher halten. Die Erkennung stabilisiert sich nach ca. 5–10 Sekunden Musik.";
+  el.hint.classList.remove("warn");
+
+  try{ wakeLock=await navigator.wakeLock?.request("screen"); }catch(e){}
+  loopTimer=setInterval(tick,100);
+}
+
+function stop(){
+  running=false;
+  clearInterval(loopTimer);
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  if(ctx) ctx.close();
+  wakeLock?.release(); wakeLock=null;
+  el.go.textContent="Erkennung starten"; el.go.classList.remove("running");
+  el.dot.classList.remove("live"); el.status.textContent="Bereit";
+}
+
+let loopTimer=null;
+function tick(){
+  analyser.getFloatFrequencyData(freqBuf);
+  const sr=ctx.sampleRate, n=freqBuf.length, binHz=sr/analyser.fftSize;
+  const chroma=new Float32Array(12);
+  let energy=0;
+  const i0=Math.max(1,Math.floor(FMIN/binHz)), i1=Math.min(n-1,Math.ceil(FMAX/binHz));
+  for(let i=i0;i<=i1;i++){
+    const db=freqBuf[i];
+    if(db<-85) continue;
+    const mag=Math.pow(10,db/20);
+    const f=i*binHz;
+    const pc=((Math.round(12*Math.log2(f/440))%12)+12+9)%12; // A=9 → C=0
+    chroma[pc]+=mag;
+    energy+=mag;
+  }
+  // Pegel
+  const lvl=Math.min(100,energy*900);
+  el.lvl.style.width=lvl+"%";
+
+  if(energy<0.004){ // zu leise → nicht akkumulieren
+    return;
+  }
+  // Normieren + akkumulieren (gleitendes Fenster ~ Sekunden)
+  const sum=chroma.reduce((a,b)=>a+b,0)||1;
+  for(let i=0;i<12;i++) chromaAcc[i]=chromaAcc[i]*DECAY+(chroma[i]/sum)*(1-DECAY);
+
+  // Anzeige Chromagram
+  const mx=Math.max(...chromaAcc)||1;
+  const top=chromaAcc.indexOf(mx);
+  chromaBars.forEach((b,i)=>{
+    b.style.height=Math.max(3,(chromaAcc[i]/mx)*44)+"px";
+    b.classList.toggle("top",i===top);
+  });
+
+  // Tonart bestimmen
+  const {best,gap}=detectKey(chromaAcc);
+  const code=camelot(best.pc,best.minor);
+  const confidence=Math.max(0,Math.min(1,(best.r-0.3)/0.55));
+
+  if(code!==displayCode){
+    if(code===candidate){ candidateCount++; } else { candidate=code; candidateCount=1; }
+    if(candidateCount>=SWITCH_AFTER || displayCode===null){
+      displayCode=code;
+      show(best.pc,best.minor,code,confidence);
+    }
+  }else{
+    candidate=null;candidateCount=0;
+    el.conf.textContent="SICHERHEIT "+Math.round(confidence*100)+" %";
+  }
+}
+
+function show(pc,minor,code,confidence){
+  el.code.textContent=code;
+  el.keyname.textContent=keyName(pc,minor)+" · "+NOTES[pc]+(minor?"m":"");
+  el.conf.textContent="SICHERHEIT "+Math.round(confidence*100)+" %";
+  paintWheel(code);
+  el.compat.innerHTML="";
+  for(const nb of neighbors(code)){
+    const c=document.createElement("div");c.className="chip mono";
+    c.innerHTML="<b>"+nb.c+"</b><small>"+nb.why+"</small>";
+    el.compat.appendChild(c);
+  }
+}
+
+el.go.addEventListener("click",()=>{ running?stop():start(); });
+document.addEventListener("visibilitychange",async()=>{
+  if(document.visibilityState==="visible"&&running){
+    try{ wakeLock=await navigator.wakeLock?.request("screen"); }catch(e){}
+  }
+});
+paintWheel(null);
+</script>
+</body>
+</html>
