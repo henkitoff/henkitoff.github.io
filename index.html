@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0b0d10">
-<title>Keyscope v1.1.0 – Live Key + BPM</title>
+<title>Keyscope v1.1.1 – Live Key + BPM</title>
 <style>
   :root{
     --bg:#0b0d10; --panel:#14171c; --line:#232830;
@@ -39,9 +39,10 @@
   .seglabel.near{fill:var(--text)}
 
   .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none}
-  .code{font-size:56px;font-weight:800;letter-spacing:-.02em;line-height:1;color:var(--accent);transition:color .5s;text-shadow:0 0 24px color-mix(in srgb,var(--accent) 40%,transparent)}
-  .keyname{font-size:16px;color:var(--text);margin-top:5px;font-weight:500}
-  .conf{font-size:10px;color:var(--muted);margin-top:3px;letter-spacing:.08em}
+  .keyname{font-size:44px;font-weight:800;letter-spacing:-.01em;line-height:1.05;color:var(--accent);transition:color .5s;text-shadow:0 0 24px color-mix(in srgb,var(--accent) 40%,transparent)}
+  .code{font-size:15px;color:var(--text);margin-top:7px;font-weight:600;letter-spacing:.04em}
+  .code span{color:var(--muted);font-weight:400}
+  .conf{font-size:10px;color:var(--muted);margin-top:4px;letter-spacing:.08em}
   .alt{font-size:11px;color:var(--muted);margin-top:2px}
   .alt b{color:var(--text)}
 
@@ -74,7 +75,7 @@
   #histlist{display:flex;flex-direction:column;gap:6px;max-height:150px;overflow-y:auto}
   .hrow{display:flex;align-items:center;gap:10px;font-size:13px}
   .hrow .t{color:var(--muted);font-size:11px;width:44px}
-  .hrow .k{font-weight:700;width:38px}
+  .hrow .k{font-weight:700;width:48px}
   .hrow .n{color:var(--text);flex:1}
   .hrow .b{color:var(--muted);font-size:12px}
   .empty{color:var(--muted);font-size:12px}
@@ -91,15 +92,15 @@
 <body>
 
 <header>
-  <div class="brand">KEYSCOPE<span>v1.1.0</span></div>
+  <div class="brand">KEYSCOPE<span>v1.1.1</span></div>
   <div class="status"><div class="dot" id="dot"></div><span id="statustext">Bereit</span></div>
 </header>
 
 <div class="wheelwrap">
   <svg id="wheel" viewBox="0 0 400 400"></svg>
   <div class="center">
-    <div class="code mono" id="code">–</div>
     <div class="keyname" id="keyname">Warte auf Musik</div>
+    <div class="code mono" id="code"></div>
     <div class="conf" id="conf"></div>
     <div class="alt" id="alt"></div>
   </div>
@@ -406,13 +407,13 @@ function tick(){
   }
   // Alternative bei knappem Rennen (z. B. Übergang mit 2 Decks)
   if(gap<0.05){
-    el.alt.innerHTML="evtl. auch <b>"+camelot(second.pc,second.minor)+" · "+shortName(second.pc,second.minor)+"</b>";
+    el.alt.innerHTML="evtl. auch <b>"+keyName(second.pc,second.minor)+"</b> ("+camelot(second.pc,second.minor)+")";
   }else el.alt.textContent="";
 }
 
 function show(pc,minor,code,confidence){
-  el.code.textContent=code;
-  el.keyname.textContent=keyName(pc,minor)+" · "+shortName(pc,minor);
+  el.keyname.textContent=keyName(pc,minor);
+  el.code.innerHTML=shortName(pc,minor)+" <span>· Camelot "+code+"</span>";
   el.conf.textContent="SICHERHEIT "+Math.round(confidence*100)+" %";
   paintWheel(code);
   el.compat.innerHTML="";
@@ -431,7 +432,7 @@ function addHistory(code,name){
   const s=Math.floor((performance.now()-startTime)/1000);
   const t=Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
   const row=document.createElement("div");row.className="hrow";
-  row.innerHTML='<span class="t mono">'+t+'</span><span class="k mono" style="color:hsl('+hueFor(parseInt(code))+' 85% 60%)">'+code+'</span><span class="n">'+name+'</span><span class="b mono">'+(bpmShown?bpmShown.toFixed(1):"–")+'</span>';
+  row.innerHTML='<span class="t mono">'+t+'</span><span class="k mono" style="color:hsl('+hueFor(parseInt(code))+' 85% 60%)">'+name+'</span><span class="n">Camelot '+code+'</span><span class="b mono">'+(bpmShown?bpmShown.toFixed(1):"–")+'</span>';
   el.hist.prepend(row);
   while(el.hist.children.length>20)el.hist.lastChild.remove();
 }
